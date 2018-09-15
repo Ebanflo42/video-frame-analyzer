@@ -1,8 +1,5 @@
 module Main where
 
-import Control.Parallel.Strategies
-
-import Data.Word
 import Data.STBImage
 import Data.Vector as V
 import Data.List as L
@@ -10,10 +7,13 @@ import Data.List as L
 import Persistence
 
 import System.Process
-import System.IO
 
 import Util
 
+instance Show a => Show (Extended a) where
+  show (Finite a) = "Finite " L.++ (show a)
+  show Infinity   = "Infinity"
+  
 readImages :: Vector String -> IO (Vector (Image RGBColor))
 readImages names =
   let unsafeLoad s = loadImage RGB s >>=
@@ -22,18 +22,18 @@ readImages names =
           Left err  -> error err
   in V.mapM unsafeLoad names
 
-toPCD :: FloatingImage -> Vector (Double, Double, Double, Double, Double)
+toPCD :: FloatingImage -> [(Float, Float, Float, Float, Float)]
 toPCD (pixels, width, height) =
   let wf   = fromIntegral width
       hf   = fromIntegral height
       maxI = width*height
 
       helper i =
-        if i == maxI then V.empty
+        if i == maxI then []
         else
           let x = i `mod` width
               y = i `div` width
-          in ((\(a,b,c) (d,e) -> (a,b,c,d,e)) (pixels ! i) ((fromIntegral x)/wf, (fromIntegral y)/hf)) `cons` helper (i + 1)
+          in ((\(a,b,c) (d,e) -> (a,b,c,d,e)) (pixels ! i) ((fromIntegral x)/wf, (fromIntegral y)/hf)):(helper (i + 1))
 
   in helper 0
 
@@ -45,22 +45,26 @@ main = do
   putStrLn "Input desired sample rate (FPS)."
   fps <- getLine
 
-  readProcess "ffmpeg" ["-i", path, "-vf", "fps=" L.++ fps, name L.++ "-%03d.png"] ""
-    >>= putStrLn
+  framesStatus <- readProcess "ffmpeg" ["-i", path, "-vf", "fps=" L.++ fps, name L.++ "-%03d.png"] ""
+  putStrLn framesStatus
 
-  readProcess "find" ["-type", "f", "-name", "*.png", "-printf", "x"] ""
-    >>= writeFile "output.txt"
+  numPngs <- readProcess "find" ["-type", "f", "-name", "*.png", "-printf", "x"] ""
 
   let translate x
         | x < 10    = "00" L.++ (show x)
         | x < 100   = '0':(show x)
         | otherwise = show x
 
-  readFile "output.txt"
-    >>= \s -> do
-      let num    = read s :: Int
-      let names  = V.map (\s -> "name" L.++ ('-':s) L.++ ".png") $ V.map translate $ 1 `range` num
+  let num    = L.length numPngs
+  let names  = V.map (\s -> name L.++ ('-':s) L.++ ".png") $ V.map translate $ 1 `range` num
 
-      V.foldl1 (>>) $ V.map (\name -> readProcess "convert" [name, "-resize", "64x48", name] "") names
+  V.foldl1 (>>) $ V.map (\name -> readProcess "convert" [name, "-resize", "48x32", "new" L.++ name] "") names
 
-      readImages names >> return ()
+  imgs <- readImages (V.map ((L.++) "new") names)
+
+  let pcd         = V.map (toPCD . img2Floating) imgs
+  let filtrations = parMapVec (makeVRFiltrationLight [0.3, 0.27, 0.24, 0.21, 0.18, 0.15, 0.12, 0.09, 0.06, 0.03] metric) pcd
+  let barcodes    = parMapVec ((L.take 2) . persistentHomology) filtrations
+  let distances   = parMapWithIndex (\i d -> bottleNeckDistances d (barcodes ! (i + 1))) $ V.tail barcodes
+
+  V.foldl1 (>>) $ V.map (putStrLn . show) distances

@@ -1,5 +1,7 @@
 module Util where
 
+import Control.Parallel.Strategies
+
 import Data.Bits
 import Data.Word
 import Data.STBImage
@@ -7,7 +9,12 @@ import Data.Vector.Storable as SV
 import Data.Vector as V
 import Data.List as L
 
-type FloatingImage = (V.Vector (Double, Double, Double), Int, Int)
+type FloatingImage = (V.Vector (Float, Float, Float), Int, Int)
+
+metric :: Floating a => (a, a, a, a, a) -> (a, a, a, a, a) -> a
+metric (x1, x2, x3, x4, x5) (y1, y2, y3, y4, y5) =
+  let d1 = y1 - x1; d2 = y2 - x2; d3 = y3 - x3; d4 = y4 - x4; d5 = y5 - x5
+  in sqrt $ d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5
 
 dropEnd :: Int -> [a] -> [a]
 dropEnd 0 list = list
@@ -19,6 +26,20 @@ range x y
   | x == y = x `V.cons` V.empty
   | x < y  = x `V.cons` (range (x + 1) y)
   | x > y  = (range x (y + 1)) `V.snoc` y
+
+-- | Parallel map a function over a vector.
+parMapVec :: (a -> b) -> V.Vector a -> V.Vector b
+parMapVec f v = runEval $ evalTraversable rpar $ V.map f v
+
+-- | Map a function that takes into account the index of each element in parallel.
+parMapWithIndex :: (Int -> a -> b) -> V.Vector a -> V.Vector b
+parMapWithIndex f vector =
+  let helper i vec = runEval $
+        if V.null vec then return V.empty
+        else
+          let current = f i $ V.head vec; rest = helper (i + 1) $ V.tail vec
+          in rpar current >> rseq rest >> (return $ current `V.cons` rest)
+  in helper 0 vector
 
 convert2Vector :: Storable a => SV.Vector a -> V.Vector a
 convert2Vector vector =
