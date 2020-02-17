@@ -9,3 +9,7 @@ On an 8-core Intel i7-6700HQ CPU running at 2.6 GHz, the frames had to be downsi
 The difference between consecutive scales was kept minimal as a means to maximize bottleneck distance. Despite this, the distances were alway measured to be zero. *Perhaps* this is because too much detail was lost once the frames were downsized.
 
 If this is the case, perhaps someone with higher-end hardware would like to pick up this project.
+
+## by the way
+
+There is a paper about optimizing persistent homology calculation for cubical complexes, i.e. pixel/voxel based data: https://eurocg11.inf.ethz.ch/abstracts/22.pdf. If you are interested in the idea of this repo and would like to see it come to fruition, you will almost certainly have to use this optimization in place of the ordinary persistence algorithm. Unfortunately, I do not have time to try this myself because this project doesn't pertain to my research or coursework at all.
